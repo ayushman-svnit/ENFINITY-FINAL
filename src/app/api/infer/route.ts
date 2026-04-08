@@ -61,7 +61,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-async function callGradioSpace(endpoint: string, image: File) {
+async function callGradioSpace(endpoint: string, image: File, tta: boolean = true) {
   const arrayBuffer = await image.arrayBuffer();
   const mimeType = image.type || "image/png";
   const dataUrl = `data:${mimeType};base64,${Buffer.from(arrayBuffer).toString("base64")}`;
@@ -69,7 +69,7 @@ async function callGradioSpace(endpoint: string, image: File) {
   const base = endpoint.replace(/\/+$/, "");
   const callEndpoint = `${base}/gradio_api/call/run_inference`;
 
-  console.log(`[Infer] Posting to ${callEndpoint}...`);
+  console.log(`[Infer] Posting to ${callEndpoint} (TTA: ${tta})...`);
 
   const queuedCall = await undiciFetch(callEndpoint, {
     method: "POST",
@@ -88,7 +88,7 @@ async function callGradioSpace(endpoint: string, image: File) {
           meta: { _type: "gradio.FileData" },
         },
         0.45,
-        true,
+        tta,
         "0.75,1.0,1.25,1.5",
       ],
     }),
@@ -278,6 +278,7 @@ export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const image = formData.get("image");
+    const tta = formData.get("tta") === "true";
 
     if (!(image instanceof File)) {
       return NextResponse.json({ error: "Image file is required." }, { status: 400 });
@@ -298,7 +299,7 @@ export async function POST(request: Request) {
     }
 
     if (customEndpoint?.includes("hf.space")) {
-      const spaceResult = await callGradioSpace(customEndpoint, image);
+      const spaceResult = await callGradioSpace(customEndpoint, image, tta);
       return NextResponse.json({
         ...spaceResult,
         modelId: modelId || "space-endpoint",

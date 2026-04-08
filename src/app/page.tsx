@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useMemo, useState, useEffect } from "react";
 
 type LabelScore = {
   label: string;
@@ -22,6 +22,7 @@ type InferenceResponse = {
   raw?: unknown;
   modelId?: string;
   error?: string;
+  latency?: number;
 };
 
 export default function Home() {
@@ -31,10 +32,22 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"input" | "mask" | "overlay">("overlay");
+  const [currentTime, setCurrentTime] = useState<string>("");
+  const [mounted, setMounted] = useState(false);
+  const [ttaEnabled, setTtaEnabled] = useState(true);
+
+  // Prevent hydration mismatch by only showing clock after mount
+  useEffect(() => {
+    setMounted(true);
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const topLabels = useMemo(() => {
     if (!result?.labels?.length) return [];
-    return [...result.labels].sort((a, b) => b.score - a.score).slice(0, 8);
+    return [...result.labels].sort((a, b) => b.score - a.score).slice(0, 10);
   }, [result]);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -53,16 +66,18 @@ export default function Home() {
   const runDemo = async (event: FormEvent) => {
     event.preventDefault();
     if (!imageFile) {
-      setErrorMessage("Please select an image first.");
+      setErrorMessage("MISSION_ERROR: NO_INPUT_DATA");
       return;
     }
     setLoading(true);
     setErrorMessage(null);
     setResult(null);
+    const start = Date.now();
 
     try {
       const formData = new FormData();
       formData.append("image", imageFile);
+      formData.append("tta", String(ttaEnabled));
 
       const response = await fetch("/api/infer", {
         method: "POST",
@@ -71,13 +86,16 @@ export default function Home() {
 
       const payload = (await response.json()) as InferenceResponse;
       if (!response.ok) {
-        throw new Error(payload.error || "Inference failed");
+        throw new Error(payload.error || "INFERENCE_FAILED");
       }
 
-      setResult(payload);
+      setResult({
+        ...payload,
+        latency: Date.now() - start
+      });
       setViewMode("overlay");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected error during inference";
+      const message = error instanceof Error ? error.message : "UNEXPECTED_SYSTEM_FAULT";
       setErrorMessage(message);
     } finally {
       setLoading(false);
@@ -85,228 +103,280 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-7xl flex-1 flex-col gap-12 px-6 py-12 sm:px-12 sm:py-20 flex">
-      {/* Hero Section */}
-      <header className="fade-up space-y-6 text-center max-w-4xl mx-auto">
-        <div className="flex justify-center">
-          <span className="glass-pill text-[var(--accent)] border-[var(--accent)] border-opacity-30 flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse"></span>
-            Enfinity Vision Pro
-          </span>
+    <main className="flex flex-col h-screen overflow-hidden bg-[var(--background)] font-sans">
+      {/* Top Telemetry Strip */}
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--line)] bg-black/40 px-6 backdrop-blur-md">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className="h-2 w-2 rounded-full bg-[var(--primary)] animate-tactical-pulse shadow-[0_0_8px_var(--primary)]" />
+            <h1 className="font-display text-sm font-bold tracking-[0.2em] uppercase">
+              Enfinity Vision <span className="text-[var(--primary)]">Pro</span>
+            </h1>
+          </div>
+          <div className="hidden border-l border-[var(--line)] pl-6 text-[10px] font-mono text-[var(--muted)] sm:block">
+            SYSTEM_STATUS: <span className={loading ? "text-[var(--secondary)]" : "text-[var(--primary)]"}>
+              {loading ? "INFERENCE_ACTIVE" : "READY_FOR_DATA"}
+            </span>
+          </div>
         </div>
-        <h1 className="text-4xl leading-[1.1] font-extrabold tracking-tight text-[var(--foreground)] sm:text-7xl bg-clip-text text-transparent bg-gradient-to-b from-white to-[#888]">
-          Offroad Segmentation at Scale
-        </h1>
-        <p className="text-lg text-[var(--muted)] leading-relaxed max-w-2xl mx-auto">
-          High-precision image segmentation for extreme terrains. Upload your terrain data to visualize masks and class confidence in real-time.
-        </p>
+        <div className="flex items-center gap-6 font-mono text-[10px] text-[var(--muted)]">
+          <div className="hidden md:block">LATENCY: {result?.latency ? `${result.latency}ms` : "--"}</div>
+          <div className="hidden md:block">COORDS: 40.7128° N, 74.0060° W</div>
+          <div className="text-[var(--primary)]">{mounted ? currentTime : "--:--:--"}</div>
+        </div>
       </header>
 
-      {/* Main Dashboard */}
-      <section className="fade-up-delay grid gap-8 lg:grid-cols-[450px_1fr] flex-1">
-        {/* Left Control Panel */}
-        <div className="flex flex-col gap-6">
-          <div className="glass-card rounded-[2.5rem] p-8 flex flex-col gap-8">
-            <h3 className="text-xl font-bold">Input & Controls</h3>
-            
-            <form className="space-y-6" onSubmit={runDemo}>
-              <div className="relative group">
-                <label
-                  htmlFor="imageUpload"
-                  className="block relative aspect-[4/3] rounded-3xl border-2 border-dashed border-[var(--line)] bg-[var(--glass-bg)] hover:border-[var(--accent)] transition-all cursor-pointer overflow-hidden group"
-                >
-                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center gap-4">
-                    {!previewUrl ? (
-                      <>
-                        <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                        </div>
-                        <div>
-                          <span className="block text-lg font-bold">Upload Terrain Data</span>
-                          <span className="text-sm text-[var(--muted)]">Supports JPG, PNG, WEBP</span>
-                        </div>
-                      </>
-                    ) : (
-                      <img src={previewUrl} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-40 group-hover:opacity-20 transition-opacity" />
-                    )}
-                    {previewUrl && (
-                      <div className="relative z-10 glass-pill bg-black/40 backdrop-blur-md">Change Image</div>
-                    )}
-                  </div>
-                  <input
-                    id="imageUpload"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                </label>
+      {/* Main Tactical Interface */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar: Mission Controls */}
+        <aside className="w-80 shrink-0 flex flex-col border-r border-[var(--line)] bg-[var(--surface)] p-6 gap-6">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono text-[var(--muted)] uppercase tracking-widest">Input Control</div>
+              <div className="h-px w-full bg-gradient-to-r from-[var(--primary)] to-transparent opacity-20" />
+            </div>
+
+            <form onSubmit={runDemo} className="flex flex-col gap-6">
+              <label className="relative block h-64 w-full cursor-pointer group">
+                <input type="file" onChange={handleFileChange} className="hidden" accept="image/*" />
+                <div className="tactical-card h-full w-full flex flex-col items-center justify-center p-4 border-dashed border-2 border-[var(--line)] group-hover:border-[var(--primary)] transition-colors">
+                  {!previewUrl ? (
+                    <>
+                      <div className="mb-4 h-12 w-12 flex items-center justify-center text-[var(--primary)] opacity-50 group-hover:opacity-100 transition-opacity">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs font-bold uppercase tracking-widest">Load Terrain Data</div>
+                        <div className="text-[10px] font-mono text-[var(--muted)] mt-1">SENSORS: IMG/WEBP</div>
+                      </div>
+                    </>
+                  ) : (
+                    <img src={previewUrl} className="h-full w-full object-cover opacity-60 group-hover:opacity-40 transition-opacity" alt="Preview" />
+                  )}
+                  {previewUrl && (
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="glass-pill">REPLACE_SOURCE</span>
+                    </div>
+                  )}
+                </div>
+              </label>
+
+              {/* TTA Toggle */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono text-[var(--muted)] uppercase">Augmentation (TTA)</span>
+                  <button 
+                    type="button"
+                    onClick={() => setTtaEnabled(!ttaEnabled)}
+                    className={`relative h-5 w-10 rounded-full transition-colors ${ttaEnabled ? 'bg-[var(--primary)]' : 'bg-white/10'}`}
+                  >
+                    <div className={`absolute top-1 h-3 w-3 rounded-full bg-black transition-all ${ttaEnabled ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
+                <p className="text-[8px] font-mono text-[var(--muted)] leading-relaxed uppercase">
+                  Higher accuracy via Test-Time Augmentation. Increases latency by ~4x.
+                </p>
               </div>
 
-              <button
-                type="submit"
+              <button 
+                type="submit" 
                 disabled={loading || !imageFile}
-                className="w-full relative group overflow-hidden rounded-2xl bg-[var(--accent)] px-8 py-4 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:scale-100"
+                className="relative w-full overflow-hidden bg-[var(--primary)] py-4 text-xs font-bold uppercase tracking-[0.2em] text-black hover:brightness-110 active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none"
               >
-                <div className="relative z-10 flex items-center justify-center gap-3">
-                  {loading && <span className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>}
-                  {loading ? "Processing Terrain..." : "Start Segmentation"}
+                <div className="relative z-10 flex items-center justify-center gap-2">
+                  {loading && <div className="h-3 w-3 border-2 border-black/20 border-t-black rounded-full animate-spin" />}
+                  {loading ? "Analyzing..." : "Run Segmentation"}
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out"></div>
+                <div className="absolute inset-x-0 bottom-0 h-1 bg-black/10" />
               </button>
             </form>
+          </div>
 
-            {errorMessage && (
-              <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-sm text-rose-400 flex gap-3 items-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
-                {errorMessage}
+          {errorMessage && (
+            <div className="tactical-card border-[var(--secondary)] bg-[var(--secondary)]/5 p-4 animate-tactical-shake">
+              <div className="flex gap-3 text-[var(--secondary)]">
+                <svg className="shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                <div className="text-[10px] font-mono uppercase leading-tight">{errorMessage}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-auto space-y-4">
+            <div className="text-[10px] font-mono text-[var(--muted)] uppercase tracking-widest">Model Telemetry</div>
+            <div className="tactical-card p-4 space-y-3 bg-black/20">
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-[var(--muted)]">MODEL:</span>
+                <span className="text-[var(--primary)] uppercase">{result?.modelId || "DINOv2+DPT"}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-[var(--muted)]">VRAM:</span>
+                <span className="text-white">12.4 GB ACTIVE</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-mono">
+                <span className="text-[var(--muted)]">PIPELINE:</span>
+                <span className="text-white">TTA {ttaEnabled ? "ACTIVE" : "DISABLED"}</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* Center: Tactical HUD */}
+        <section className="flex-1 flex flex-col relative bg-black overflow-hidden">
+          {/* HUD Viewport */}
+          <div className="flex-1 relative flex items-center justify-center p-12 overflow-hidden">
+            {/* Grid Overlay */}
+            <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+                 style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '5% 5%' }} />
+            
+            {/* Corner Markers */}
+            <div className="absolute top-12 left-12 h-8 w-8 border-t-2 border-l-2 border-[var(--primary)] opacity-40" />
+            <div className="absolute top-12 right-12 h-8 w-8 border-t-2 border-r-2 border-[var(--primary)] opacity-40" />
+            <div className="absolute bottom-12 left-12 h-8 w-8 border-b-2 border-l-2 border-[var(--primary)] opacity-40" />
+            <div className="absolute bottom-12 right-12 h-8 w-8 border-b-2 border-r-2 border-[var(--primary)] opacity-40" />
+
+            {!previewUrl && !loading && (
+              <div className="text-center space-y-4 animate-tactical-pulse">
+                <div className="font-mono text-[var(--muted)] text-[10px] uppercase tracking-[0.3em]">Waiting for terrain input...</div>
+                <div className="h-px w-32 bg-[var(--line)] mx-auto" />
+              </div>
+            )}
+
+            {(previewUrl || result) && (
+              <div className="relative w-full h-full flex items-center justify-center group overflow-hidden tactical-card">
+                {/* Image Layers */}
+                {previewUrl && (viewMode === "input" || viewMode === "overlay") && (
+                  <img 
+                    src={previewUrl} 
+                    className={`max-h-full max-w-full object-contain transition-all duration-700 ${viewMode === "overlay" ? "brightness-50 contrast-125" : ""}`}
+                    alt="Source"
+                  />
+                )}
+
+                {result?.outputImageUrl && viewMode === "overlay" && (
+                  <img
+                    src={result.outputImageUrl}
+                    className="absolute max-h-full max-w-full object-contain mix-blend-screen opacity-80"
+                    alt="Overlay"
+                  />
+                )}
+
+                {result?.masks && (viewMode === "mask" || viewMode === "overlay") && (
+                  <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${viewMode === "overlay" ? "opacity-60" : "opacity-100"}`}>
+                    {result.masks.map((mask, idx) => (
+                      <img
+                        key={idx}
+                        src={mask.maskDataUrl}
+                        className="absolute max-h-full max-w-full object-contain mix-blend-lighten pointer-events-none"
+                        style={{ filter: `drop-shadow(0 0 10px ${mask.color}) brightness(1.5)` }}
+                        alt="Mask"
+                      />
+                    ))}
+                  </div>
+                )}
+                
+                {/* Viewport HUD Info */}
+                <div className="absolute top-4 left-4 font-mono text-[8px] text-[var(--primary)] flex flex-col gap-1">
+                  <div>RESOLUTION: 1024x768</div>
+                  <div>SENSORS: Lidar+Visible</div>
+                  <div className="flex gap-2 items-center">
+                    SIGNAL: <div className="h-1 w-8 bg-white/10 overflow-hidden"><div className="h-full bg-[var(--primary)] w-3/4 animate-tactical-pulse" /></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Centered Loading Overlay */}
+            {loading && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                <div className="tactical-scan" />
+                <div className="text-center space-y-6">
+                  <div className="relative h-24 w-24 mx-auto">
+                    <div className="absolute inset-0 border-2 border-[var(--primary)] opacity-20 rounded-full" />
+                    <div className="absolute inset-0 border-2 border-t-[var(--primary)] animate-spin rounded-full" />
+                    <div className="absolute inset-4 border border-[var(--primary)] opacity-40 animate-tactical-pulse rounded-full" />
+                  </div>
+                  <div className="font-mono text-[var(--primary)] text-xs uppercase tracking-[0.2em] animate-tactical-pulse">
+                    Scanning Terrain...
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Label Breakdown Card */}
-          {result && (
-            <div className="glass-card rounded-[2.5rem] p-8 flex flex-col gap-6">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xl font-bold">Inference Results</h3>
-                <span className="text-xs text-[var(--muted)] font-mono">DINOv2 + DPT</span>
+          {/* Mode Switcher Footer */}
+          <footer className="h-16 shrink-0 border-t border-[var(--line)] bg-black/40 flex items-center justify-between px-8">
+            <div className="flex gap-4">
+              {["input", "mask", "overlay"].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode as any)}
+                  disabled={!result && mode !== "input"}
+                  className={`relative px-6 py-2 transition-all group disabled:opacity-30`}
+                >
+                  <div className={`text-[10px] font-mono uppercase tracking-widest ${viewMode === mode ? "text-[var(--primary)]" : "text-[var(--muted)] group-hover:text-white"}`}>
+                    {mode}
+                  </div>
+                  {viewMode === mode && (
+                    <div className="absolute bottom-0 left-0 w-full h-0.5 bg-[var(--primary)] shadow-[0_0_8px_var(--primary)]" />
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="font-mono text-[8px] text-[var(--muted)] max-w-xs text-right hidden sm:block">
+              WARNING: AI INFERENCE IS EXPERIMENTAL. ALWAYS VERIFY TERRAIN CONDITIONS MANUALLY BEFORE NAVIGATION.
+            </div>
+          </footer>
+        </section>
+
+        {/* Right Sidebar: Data Analytics */}
+        <aside className="w-80 shrink-0 flex flex-col border-l border-[var(--line)] bg-[var(--surface)] p-6 gap-6">
+          <div className="space-y-2">
+            <div className="text-[10px] font-mono text-[var(--muted)] uppercase tracking-widest">Terrain Analytics</div>
+            <div className="h-px w-full bg-gradient-to-l from-[var(--primary)] to-transparent opacity-20" />
+          </div>
+
+          {!result ? (
+            <div className="flex flex-1 items-center justify-center text-center opacity-30">
+              <div className="space-y-2">
+                <div className="text-[10px] font-mono uppercase">No Analysis Data</div>
+                <div className="text-[8px] font-mono">Initiate scan to populate results</div>
               </div>
-              
-              <ul className="grid gap-3">
-                {topLabels.map((item) => (
-                  <li key={item.label} className="group relative rounded-xl border border-white/5 bg-white/[0.02] p-4 transition-all hover:bg-white/[0.04]">
-                    <div className="relative z-10 mb-2 flex items-center justify-between text-sm">
-                      <span className="font-bold tracking-tight">{item.label}</span>
-                      <span className="text-[var(--accent)] font-mono">{(item.score * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="relative h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-[var(--accent)] transition-all duration-1000 ease-out shadow-[0_0_8px_var(--accent-glow)]"
-                        style={{ width: `${item.score * 100}%` }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[10px] text-center text-[var(--muted)] uppercase tracking-widest">Confidence Scores</p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              {topLabels.map((item) => (
+                <div key={item.label} className="tactical-card p-3 border-l-2 border-l-[var(--primary)] bg-white/[0.02]">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+                    <span className="font-mono text-[10px] text-[var(--primary)]">{(item.score * 100).toFixed(1)}%</span>
+                  </div>
+                  <div className="h-1 w-full bg-white/5 overflow-hidden">
+                    <div 
+                      className="h-full bg-[var(--primary)] shadow-[0_0_8px_var(--primary-glow)] transition-all duration-1000 ease-out"
+                      style={{ width: `${item.score * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-        </div>
 
-        {/* Right Result Panel */}
-        <div className="flex flex-col gap-6 min-h-[600px]">
-          <div className="glass-card rounded-[2.5rem] flex-1 flex flex-col overflow-hidden">
-            {/* Toolbar */}
-            <div className="p-4 border-b border-[var(--line)] flex items-center justify-between bg-black/20 backdrop-blur-xl">
-              <div className="flex gap-2">
-                <div className="flex bg-white/5 p-1 rounded-xl">
-                  {["input", "mask", "overlay"].map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setViewMode(mode as any)}
-                      disabled={!result && mode !== "input"}
-                      className={`px-6 py-2 text-xs font-bold rounded-lg transition-all capitalize ${
-                        viewMode === mode 
-                        ? "bg-[var(--accent)] text-white shadow-lg" 
-                        : "text-[var(--muted)] hover:text-white disabled:opacity-30 disabled:hover:text-[var(--muted)]"
-                      }`}
-                    >
-                      {mode === "overlay" ? "Composite" : mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="hidden sm:block">
-                <span className="text-[10px] font-mono text-[var(--muted)] px-3">
-                  {result ? "Complete" : loading ? "Inference Active" : "Waiting for terrain"}
-                </span>
-              </div>
-            </div>
-
-            {/* Viewport */}
-            <div className="relative flex-1 bg-[#050505] overflow-hidden flex items-center justify-center p-8 group">
-              {!previewUrl && !loading && (
-                <div className="text-center space-y-4 max-w-sm">
-                  <div className="w-20 h-20 rounded-full bg-white/5 mx-auto flex items-center justify-center">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
-                  </div>
-                  <p className="text-[var(--muted)] text-sm leading-relaxed">
-                    Interactive terrain data visualization will appear here after segmentation process.
-                  </p>
-                </div>
-              )}
-
-              {loading && !result && (
-                <div className="text-center space-y-6">
-                  <div className="relative flex items-center justify-center">
-                    <div className="absolute w-24 h-24 rounded-full border-2 border-[var(--accent)] border-t-transparent animate-spin opacity-40"></div>
-                    <div className="absolute w-32 h-32 rounded-full border-2 border-[var(--secondary)] border-b-transparent animate-spin-reverse opacity-20"></div>
-                    <span className="text-xs font-bold text-[var(--accent)] tracking-widest animate-pulse">SEGMENTING</span>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-sm font-bold text-white">Advanced Inference in Progress</p>
-                    <p className="text-xs text-[var(--muted)]">Executing DINOv2 + DPT + TTA pipelines...</p>
-                  </div>
-                </div>
-              )}
-
-              {(previewUrl || result) && (
-                <div className="relative w-full h-full flex items-center justify-center transition-opacity duration-500">
-                  {/* Original Input Layer */}
-                  {previewUrl && (viewMode === "input" || viewMode === "overlay") && (
-                    <img 
-                      src={previewUrl} 
-                      alt="Input" 
-                      className={`max-h-full max-w-full rounded-xl object-contain transition-opacity duration-300 ${viewMode === "overlay" ? "brightness-[0.8]" : ""}`}
-                    />
-                  )}
-
-                  {/* Overlay Result Layer */}
-                  {result?.outputImageUrl && viewMode === "overlay" && (
-                    <img
-                      src={result.outputImageUrl}
-                      alt="Composite Overlay"
-                      className="absolute max-h-full max-w-full rounded-xl object-contain opacity-70 mix-blend-screen"
-                    />
-                  )}
-
-                  {/* Masks Layer (Individual segmented pieces) */}
-                  {result?.masks && (viewMode === "mask" || viewMode === "overlay") && (
-                    <div className={`absolute inset-0 flex items-center justify-center p-8 transition-opacity duration-300 ${viewMode === "overlay" ? "opacity-60" : "opacity-100"}`}>
-                      {result.masks.map((mask, idx) => (
-                        <img
-                          key={idx}
-                          src={mask.maskDataUrl}
-                          className="absolute max-h-[calc(100%-4rem)] max-w-[calc(100%-4rem)] rounded-xl object-contain mix-blend-lighten pointer-events-none"
-                          style={{ filter: `drop-shadow(0 0 10px ${mask.color}) brightness(1.5)` }}
-                          alt="Class mask"
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+          <div className="mt-auto pt-6 border-t border-[var(--line)]">
+            <div className="text-[10px] font-mono text-[var(--muted)] uppercase mb-3">Telemetry Log</div>
+            <div className="tactical-card h-32 bg-black/40 p-3 font-mono text-[8px] overflow-y-auto text-[var(--primary)]/70 flex flex-col gap-1">
+              <div>[SYSTEM] BOOTING_V2.4_KERNEL...</div>
+              <div>[SYSTEM] NEURAL_ENGINE_ONLINE</div>
+              {ttaEnabled && <div>[SYSTEM] TTA_PIPELINE_STAGED</div>}
+              {loading && <div>[INFER] PROCESSING_RASTER_DATA...</div>}
+              {result && <div>[INFER] ANALYSIS_COMPLETE_IN_{result.latency}MS</div>}
+              {result?.labels && <div>[DATA] IDENTIFIED_{result.labels.length}_SEGMENTS</div>}
+              {errorMessage && <div className="text-[var(--secondary)]">[ERROR] {errorMessage}</div>}
+              <div className="animate-tactical-pulse">_</div>
             </div>
           </div>
-          
-          <div className="flex gap-4 items-center px-8 py-4 glass-card rounded-3xl opacity-60 hover:opacity-100 transition-opacity">
-            <div className="flex -space-x-2">
-              {[1, 2, 3].map(i => <div key={i} className="w-6 h-6 rounded-full border-2 border-black bg-white/10 ring-1 ring-white/5 overflow-hidden"><img src={`https://i.pravatar.cc/100?u=${i}`} alt="Avatar" /></div>)}
-            </div>
-            <p className="text-[10px] text-[var(--muted)] uppercase tracking-[0.2em]">Live Session: Enterprise Pipeline v2.4 Active</p>
-          </div>
-        </div>
-      </section>
-      
-      <style jsx>{`
-        .animate-spin-reverse {
-          animation: spin-reverse 3s linear infinite;
-        }
-        @keyframes spin-reverse {
-          from { transform: rotate(360deg); }
-          to { transform: rotate(0deg); }
-        }
-      `}</style>
+        </aside>
+      </div>
     </main>
   );
 }
+
