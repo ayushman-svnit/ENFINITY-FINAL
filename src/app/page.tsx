@@ -375,7 +375,7 @@ export default function Home() {
               {["input", "mask", "overlay"].map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => setViewMode(mode as any)}
+                  onClick={() => setViewMode(mode as "input" | "mask" | "overlay")}
                   disabled={!result && mode !== "input"}
                   className={`relative px-6 py-2 transition-all group disabled:opacity-30`}
                 >

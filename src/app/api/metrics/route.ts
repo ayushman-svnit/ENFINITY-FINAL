@@ -11,14 +11,18 @@ export async function GET() {
   const modelId = process.env.HUGGINGFACE_MODEL_ID || "rrrr08/ENFINITY";
   const token = process.env.HUGGINGFACE_TOKEN;
 
-  let hfData: any = null;
+  interface HfData {
+    lastModified?: string;
+    downloads?: number;
+  }
+  let hfData: HfData | null = null;
   try {
     const res = await undiciFetch(`https://huggingface.co/api/models/${modelId}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       dispatcher: undiciAgent,
     });
     if (res.ok) {
-      hfData = await res.json();
+      hfData = (await res.json()) as HfData;
     }
   } catch (e) {
     console.error("HF_METADATA_FETCH_FAILED", e);
@@ -27,7 +31,7 @@ export async function GET() {
   // Dynamic README Parsing
   let readmeContent = "";
   try {
-    const readmePath = path.join(process.cwd(), "New folder", "README.md");
+    const readmePath = path.join(process.cwd(), "README.md");
     readmeContent = await readFile(readmePath, "utf-8");
   } catch (err) {
     console.error("README_READ_FAILED", err);
@@ -53,7 +57,12 @@ export async function GET() {
   }
 
   // Extract Class Benchmarks
-  let benchmarks: any[] = [];
+  interface BenchmarkItem {
+    label: string;
+    value: number;
+    color: string;
+  }
+  let benchmarks: BenchmarkItem[] = [];
   // Matches: | 🌲 Trees | ... | ... | **0.4673** |
   const classMetricRegex = /\| (?:\S+\s+)?([^|]+?)\s*\|[^|]*\|[^|]*\|\s*\**(\d+\.\d+)\**\s*\|/g;
   

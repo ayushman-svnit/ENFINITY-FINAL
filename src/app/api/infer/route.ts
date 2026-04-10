@@ -29,9 +29,6 @@ function toDataUrl(contentType: string, data: ArrayBuffer) {
   return `data:${contentType};base64,${base64}`;
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function isMaskArray(value: unknown): value is HfMask[] {
   return (
