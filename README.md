@@ -54,4 +54,4 @@ Open `http://localhost:3000`.
 ## Notes
 
 - This project is tailored for **rrrr08/ENFINITY** but supports any model following the Gradio SSE v3 / v5 protocol.
-- For private models, ensure your `HUGGINGFACE_TOKEN` has proper repository permissions.
+- For private models, ensure your `HUGGINGFACE_TOKEN` has proper repository permissions. 
