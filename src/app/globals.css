@@ -141,6 +141,15 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.animate-tactical-shimmer {
+  animation: tactical-shimmer-anim 2s linear infinite;
+}
+
+@keyframes tactical-shimmer-anim {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 4px;

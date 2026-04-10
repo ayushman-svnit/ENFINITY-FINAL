@@ -25,6 +25,19 @@ type InferenceResponse = {
   latency?: number;
 };
 
+const TERRAIN_COLOR_MAP: Record<string, string> = {
+  "Trees": "#228B22",
+  "Lush Bushes": "#00FF00",
+  "Dry Grass": "#D2B48C",
+  "Dry Bushes": "#8B5A2B",
+  "Ground Clutter": "#808000",
+  "Flowers": "#FF69B4",
+  "Logs": "#8B4513",
+  "Rocks": "#808080",
+  "Landscape": "#A0522D",
+  "Sky": "#87CEEB",
+};
+
 export default function Home() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -35,6 +48,31 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState<string>("");
   const [mounted, setMounted] = useState(false);
   const [ttaEnabled, setTtaEnabled] = useState(true);
+  const [apiProgress, setApiProgress] = useState(0);
+
+  // API Progress simulation logic
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      setApiProgress(0);
+      const expectedTime = ttaEnabled ? 7500 : 1800; // Expected ms based on model complexity
+      const intervalTime = 100;
+      const increment = (intervalTime / expectedTime) * 100;
+      
+      interval = setInterval(() => {
+        setApiProgress(prev => {
+          if (prev >= 96) {
+            // Decelerate as we get closer to completion
+            return Math.min(prev + 0.1, 99);
+          }
+          return prev + increment;
+        });
+      }, intervalTime);
+    } else {
+      setApiProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading, ttaEnabled]);
 
   // Prevent hydration mismatch by only showing clock after mount
   useEffect(() => {
@@ -206,12 +244,40 @@ export default function Home() {
             <div className="tactical-card p-4 space-y-3 bg-black/20">
               <div className="flex justify-between text-[10px] font-mono">
                 <span className="text-[var(--muted)]">MODEL:</span>
-                <span className="text-[var(--primary)] uppercase">{result?.modelId || "DINOv2+DPT"}</span>
+                <span className="text-[var(--primary)] uppercase">DINOv2 ViT-L/14 + DPT</span>
               </div>
-              <div className="flex justify-between text-[10px] font-mono">
-                <span className="text-[var(--muted)]">VRAM:</span>
-                <span className="text-white">12.4 GB ACTIVE</span>
-              </div>
+              {loading ? (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex justify-between text-[10px] font-mono">
+                    <span className="text-[var(--primary)] animate-tactical-pulse">ANALYZING_STREAM:</span>
+                    <span className="text-white">{apiProgress.toFixed(0)}%</span>
+                  </div>
+                  <div className="relative h-1.5 w-full bg-white/5 overflow-hidden border border-white/5">
+                    <div 
+                      className="absolute h-full bg-[var(--primary)] shadow-[0_0_12px_var(--primary-glow)] transition-all duration-300 ease-out"
+                      style={{ width: `${apiProgress}%` }}
+                    />
+                    <div className="absolute inset-0 opacity-30 pointer-events-none" 
+                         style={{ backgroundImage: 'linear-gradient(90deg, transparent 95%, rgba(0,0,0,0.5) 95%)', backgroundSize: '10% 100%' }} />
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full animate-tactical-shimmer" />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex justify-between text-[10px] font-mono">
+                    <span className="text-[var(--muted)]">NEURAL ACCURACY:</span>
+                    <span className="text-white">87.14% VRFY</span>
+                  </div>
+                  <div className="relative h-1.5 w-full bg-white/5 overflow-hidden">
+                    <div 
+                      className="absolute h-full bg-[var(--primary)] shadow-[0_0_8px_var(--primary-glow)] transition-all duration-1000 ease-out"
+                      style={{ width: `87.14%` }}
+                    />
+                    <div className="absolute inset-0 opacity-20 pointer-events-none" 
+                         style={{ backgroundImage: 'linear-gradient(90deg, transparent 95%, rgba(0,0,0,0.5) 95%)', backgroundSize: '10% 100%' }} />
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between text-[10px] font-mono">
                 <span className="text-[var(--muted)]">PIPELINE:</span>
                 <span className="text-white">TTA {ttaEnabled ? "ACTIVE" : "DISABLED"}</span>
@@ -296,7 +362,7 @@ export default function Home() {
                     <div className="absolute inset-4 border border-[var(--primary)] opacity-40 animate-tactical-pulse rounded-full" />
                   </div>
                   <div className="font-mono text-[var(--primary)] text-xs uppercase tracking-[0.2em] animate-tactical-pulse">
-                    Scanning Terrain...
+                    Scanning Terrain... {apiProgress.toFixed(0)}%
                   </div>
                 </div>
               </div>
@@ -344,20 +410,27 @@ export default function Home() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-              {topLabels.map((item) => (
-                <div key={item.label} className="tactical-card p-3 border-l-2 border-l-[var(--primary)] bg-white/[0.02]">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
-                    <span className="font-mono text-[10px] text-[var(--primary)]">{(item.score * 100).toFixed(1)}%</span>
+              {topLabels.map((item) => {
+                const terrainColor = TERRAIN_COLOR_MAP[item.label] || "var(--primary)";
+                return (
+                  <div key={item.label} className="tactical-card p-3 bg-white/[0.02]" style={{ borderLeftWidth: '2px', borderLeftColor: terrainColor }}>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{item.label}</span>
+                      <span className="font-mono text-[10px]" style={{ color: terrainColor }}>{(item.score * 100).toFixed(1)}%</span>
+                    </div>
+                    <div className="h-1 w-full bg-white/5 overflow-hidden">
+                      <div 
+                        className="h-full transition-all duration-1000 ease-out"
+                        style={{ 
+                          width: `${item.score * 100}%`,
+                          backgroundColor: terrainColor,
+                          boxShadow: `0 0 8px ${terrainColor}80`
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-1 w-full bg-white/5 overflow-hidden">
-                    <div 
-                      className="h-full bg-[var(--primary)] shadow-[0_0_8px_var(--primary-glow)] transition-all duration-1000 ease-out"
-                      style={{ width: `${item.score * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
